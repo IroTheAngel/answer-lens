@@ -3,6 +3,7 @@ import { ai, session, stream, whenReady, notReadyText, errText } from './ai.js';
 import { icon } from './icons.js';
 import { md, plain } from './md.js';
 import { load, save, uid, toJpeg, dataUrlToBlob, timeAgo, copyText } from './store.js';
+import { isHebrew, heReady, heNotReadyText, textToEn, matchChoice, toHe, mdToHe } from './translate.js';
 
 const MAX_HISTORY = 150;
 let history = []; // newest first
@@ -111,6 +112,8 @@ function toTab(tabId, entry, extra = {}) {
     detailed: entry.detailed,
     error: entry.error,
     explanation: entry.explanation,
+    lang: entry.lang || 'en',
+    note: entry.note || '',
     ...extra,
   }).catch(() => {});
 }
@@ -140,13 +143,35 @@ async function solve(entry, parts, tabId, fresh = false) {
     intro += '\nOnly answer multiple-choice or true/false questions. If it isn\'t one, reply "TYPE: none" and "ANSWER: No multiple-choice question found".';
   }
   if (entry.detailed) intro += '\nGive a full, detailed answer with 4 to 8 steps.';
+
+  // Hebrew: the AI reads English best, so translate the question for it and
+  // translate the answer back (Settings → Language → Answer language).
+  const qHe = isHebrew(parts.map((p) => p.text).join('\n'));
+  const wantHe = s.answerLang === 'he' || (s.answerLang !== 'en' && qHe);
+  const heOk = (qHe || wantHe) && (await heReady());
+  const pieces = [];
+  if (qHe && heOk) {
+    for (const p of parts) {
+      if (!p.text.trim()) continue;
+      const t = await textToEn(p.text);
+      p.textEn = t.text;
+      pieces.push(...t.pieces);
+    }
+    intro += '\nThe question is in Hebrew. Read the English translation below; the picture shows the original Hebrew.';
+  }
+  entry.note = (qHe || s.answerLang === 'he') && !heOk ? heNotReadyText() : '';
+  const toHebrew = wantHe && heOk;
+
   const content = [{ type: 'text', value: intro }];
   const each = parts.length > 1 ? 2000 : 3500;
   parts.forEach((p, i) => {
     if (useImage && p.blob) content.push({ type: 'image', value: p.blob });
-    if (p.text.trim()) {
-      const label = entry.source === 'menu' ? 'Selected text' : `Text found in snap ${i + 1} (it may be incomplete)`;
-      content.push({ type: 'text', value: `${label}:\n"""\n${p.text.slice(0, each)}\n"""` });
+    const text = p.textEn || p.text;
+    if (text.trim()) {
+      const label = entry.source === 'menu'
+        ? 'Selected text' + (p.textEn ? ', translated from Hebrew' : '')
+        : `Text found in snap ${i + 1}${p.textEn ? ', translated from Hebrew' : ''} (it may be incomplete)`;
+      content.push({ type: 'text', value: `${label}:\n"""\n${text.slice(0, each)}\n"""` });
     }
   });
   const input = useImage ? [{ role: 'user', content }] : content.map((c) => c.value).join('\n\n');
@@ -159,7 +184,13 @@ async function solve(entry, parts, tabId, fresh = false) {
   try {
     const sess = await session('snap');
     for await (const full of stream(sess, input, ctl.signal)) {
-      Object.assign(entry, parseReply(full));
+      const reply = parseReply(full);
+      if (toHebrew) {
+        // Keep showing "Thinking…" until the Hebrew is ready.
+        entry.en = reply;
+        continue;
+      }
+      Object.assign(entry, reply);
       entry.status = 'streaming';
       renderCard(entry);
       if (performance.now() - lastSent > 120) {
@@ -168,8 +199,20 @@ async function solve(entry, parts, tabId, fresh = false) {
       }
     }
     sess.destroy?.();
+    if (toHebrew && entry.en) {
+      const en = entry.en;
+      entry.type = en.type;
+      if (isNoResult(en)) Object.assign(entry, { answer: en.answer, steps: en.steps, question: en.question });
+      else {
+        entry.answer = matchChoice(en.answer, pieces) || (await toHe(en.answer));
+        entry.question = en.question ? await toHe(en.question) : '';
+        entry.steps = [];
+        for (const st of en.steps) entry.steps.push(await toHe(st));
+        entry.lang = 'he';
+      }
+    }
     entry.secs = (performance.now() - t0) / 1000;
-    entry.status = isNoResult(entry) ? 'noresult' : 'done';
+    entry.status = isNoResult(entry.en && toHebrew ? entry.en : entry) ? 'noresult' : 'done';
     renderCard(entry);
     toTab(tabId, entry);
     persist();
@@ -262,11 +305,16 @@ export async function explain(id, tabId = null) {
   try {
     if (!(await whenReady())) throw new Error(notReadyText());
     const sess = await session('explain');
-    const text = `Explain this question and how to get the answer.\nQuestion: ${entry.question || '(see the picture)'}\nAnswer: ${entry.answer}${entry.steps.length ? '\nShort steps: ' + entry.steps.join(' ') : ''}`;
+    // Hebrew answers keep their English version for the AI.
+    const src = entry.lang === 'he' && entry.en ? entry.en : entry;
+    const text = `Explain this question and how to get the answer.\nQuestion: ${src.question || '(see the picture)'}\nAnswer: ${src.answer}${src.steps.length ? '\nShort steps: ' + src.steps.join(' ') : ''}`;
     const pic = ai.mode === 'image' && entry.thumbs[0] ? await dataUrlToBlob(entry.thumbs[0]) : null;
     const input = pic ? [{ role: 'user', content: [{ type: 'text', value: text }, { type: 'image', value: pic }] }] : text;
+    const hebrew = entry.lang === 'he' && (await heReady());
     let lastSent = 0;
-    for await (const full of stream(sess, input)) {
+    let full = '';
+    for await (full of stream(sess, input)) {
+      if (hebrew) continue; // shown once it's translated
       entry.explanation = full;
       renderCard(entry);
       if (performance.now() - lastSent > 150) {
@@ -275,6 +323,7 @@ export async function explain(id, tabId = null) {
       }
     }
     sess.destroy?.();
+    if (hebrew) entry.explanation = await mdToHe(full);
   } catch (e) {
     entry.explanation = '⚠ ' + errText(e);
   }
@@ -361,14 +410,24 @@ function fillCard(e, el) {
       <button class="mini" data-act="chat" title="Ask about it in chat">${icon('chat', 15)}</button>` : ''}
       <button class="mini" data-act="delete" title="Delete">${icon('trash', 15)}</button>
     </div>`;
-  el.innerHTML = `${shots}<div class="inner">${body}${explanation}${actions}</div>`;
+  const note = e.note && !busy ? `<div class="note-line">${icon('info', 14)}<span></span></div>` : '';
+  el.innerHTML = `${shots}<div class="inner">${body}${note}${explanation}${actions}</div>`;
   const set = (sel, text) => { const n = el.querySelector(sel); if (n) n.textContent = text; };
   set('.error span', e.error);
   set('.q', e.question);
   set('.answer', e.answer);
   set('.meta', meta);
+  set('.note-line span', e.note);
+  // Hebrew reads right to left.
+  const rtl = e.lang === 'he';
+  el.querySelectorAll('.q, .answer').forEach((n) => { n.dir = 'auto'; });
+  const mdBox = el.querySelector('.explanation .md');
+  if (mdBox) mdBox.dir = rtl ? 'rtl' : 'auto';
   const ol = el.querySelector('.steps ol');
-  if (ol) for (const s of e.steps) ol.append(Object.assign(document.createElement('li'), { textContent: s }));
+  if (ol) {
+    ol.dir = rtl ? 'rtl' : 'auto';
+    for (const s of e.steps) ol.append(Object.assign(document.createElement('li'), { textContent: s, dir: 'auto' }));
+  }
   el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', (ev) => act(e, b.dataset.act, ev, b)));
 }
 

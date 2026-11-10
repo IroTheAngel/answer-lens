@@ -6,6 +6,7 @@ import { initChat, openChatWith, focusChat, clearChats } from './chat.js';
 import { initStudy } from './study.js';
 import { initSettings, settings } from './settings.js';
 import { resetSettings } from './store.js';
+import { he, checkHe, setupHe, onHe } from './translate.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -104,7 +105,11 @@ function renderStatus() {
       const b = document.createElement('button');
       b.className = 'btn small';
       b.textContent = 'Set up the AI';
-      b.addEventListener('click', () => { b.disabled = true; setupAI(); });
+      b.addEventListener('click', () => {
+        b.disabled = true;
+        setupAI();
+        if (he.state === 'downloadable') setupHe(); // the same click sets up Hebrew too
+      });
       txt().append(b);
       if (ai.error) txt().append(Object.assign(document.createElement('p'), { textContent: 'Last try: ' + ai.error }));
       break;
@@ -148,6 +153,37 @@ function renderStatus() {
     error: 'Error',
   }[ai.state] || '…';
   $('#ai-info').textContent = label;
+}
+
+// ---------- Hebrew translator status (Settings → Language) ----------
+function renderHe() {
+  const label = {
+    checking: '…',
+    ready: 'Ready',
+    downloadable: 'Not set up',
+    downloading: `Downloading… ${Math.round((he.progress || 0) * 100)}%`,
+    missing: 'Not in this Chrome',
+    unavailable: 'Not available',
+    error: 'Error',
+  }[he.state] || '…';
+  $('#he-state').textContent = label;
+  const box = $('#he-setup');
+  box.textContent = '';
+  if (he.state === 'downloadable' || he.state === 'error') {
+    const b = document.createElement('button');
+    b.className = 'btn small';
+    b.textContent = 'Set up Hebrew';
+    b.addEventListener('click', () => { b.disabled = true; setupHe(); });
+    box.append(b);
+    if (he.error) box.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Last try: ' + he.error }));
+  } else if (he.state === 'downloading') {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.innerHTML = `<div style="width:${Math.round((he.progress || 0) * 100)}%"></div>`;
+    box.append(bar);
+  } else if (he.state === 'missing' || he.state === 'unavailable') {
+    box.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Update Chrome to get its built-in translator. Until then, answers are in English.' }));
+  }
 }
 
 // ---------- snapping from the panel ----------
@@ -223,6 +259,8 @@ async function init() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) showShortcuts(); });
   onAI(renderStatus);
   checkAI();
+  onHe(renderHe);
+  checkHe();
 }
 
 ready = init();

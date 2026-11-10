@@ -204,7 +204,7 @@ button { font: inherit; color: inherit; }
 }
 .empty h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink-2); }
 .empty p { margin: 6px 0 0; font-size: 12.5px; }
-.howto { margin: 0; padding-left: 18px; }
+.howto { margin: 0; padding: 0; padding-inline-start: 18px; }
 .howto li { margin: 4px 0; }
 .toast {
   position: fixed;
@@ -312,17 +312,19 @@ button { font: inherit; color: inherit; }
 }
 .steps summary::-webkit-details-marker { display: none; }
 .steps summary .ic { color: var(--blue); }
-.steps ol { margin: 4px 0 0; padding-left: 22px; }
+.steps ol { margin: 4px 0 0; padding: 0; padding-inline-start: 22px; }
 .steps li { margin: 2px 0; }
 .explanation { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .explanation .label .ic { color: var(--amber); }
 .card-actions { display: flex; align-items: center; gap: 2px; margin-top: 8px; }
+.note-line { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; font-size: 12px; color: #8A5A00; }
+.note-line .ic { margin-top: 2px; }
 .card-actions .meta { flex: 1; font-size: 11.5px; color: var(--muted); }
 
 /* Markdown */
 .md p { margin: 6px 0; }
 .md h4 { margin: 10px 0 4px; font-size: 14px; }
-.md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+.md ul, .md ol { margin: 6px 0; padding: 0; padding-inline-start: 22px; }
 .md li { margin: 2px 0; }
 .md code { font: 12.5px Consolas, monospace; background: var(--ice-2); padding: 1px 5px; border-radius: 5px; }
 .md pre { position: relative; margin: 8px 0; padding: 10px 12px; background: #0F2138; color: #E6F0FF; border-radius: 10px; overflow-x: auto; }
@@ -509,6 +511,9 @@ button { font: inherit; color: inherit; }
 .sw:disabled { cursor: default; }
 .opt-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .val { font-size: 12.5px; color: var(--blue); white-space: nowrap; font-weight: 700; }
+.sel { border: 2px solid var(--ice); border-radius: 10px; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--ink); background: #fff; cursor: pointer; flex: none; }
+.sel:focus { outline: none; border-color: var(--blue-2); }
+#he-setup:not(:empty) { margin-top: 8px; }
 .sw { appearance: none; width: 38px; height: 22px; border-radius: 99px; background: #C9D6E5; position: relative; cursor: pointer; flex: none; transition: background .15s; margin: 0; }
 .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003; transition: left .15s; }
 .sw:checked { background: var(--blue); }

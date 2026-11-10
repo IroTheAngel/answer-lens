@@ -48,6 +48,7 @@ export async function initSettings(cb) {
     grid.append(b);
   }
   $('#opt-near').addEventListener('change', (e) => setSettings({ position: e.target.checked ? 'near' : 'bc' }));
+  $('#opt-lang').addEventListener('change', (e) => setSettings({ answerLang: e.target.value }));
 
   chrome.storage.onChanged.addListener((ch) => {
     if (!ch.settings) return;
@@ -73,6 +74,7 @@ function paint() {
   $('#opt-ghost').disabled = !s.subtle;
   $('#opt-ghost').closest('.opt').classList.toggle('dim', !s.subtle);
   $('#power').checked = s.enabled;
+  $('#opt-lang').value = s.answerLang || 'auto';
   $('#power-txt').textContent = s.enabled ? 'On' : 'Off';
   const keep = s.displayTime === 0;
   $('#opt-keep').checked = keep;

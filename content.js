@@ -104,7 +104,8 @@
       font-size: 12.5px; padding: 3px 10px 3px 7px; border-radius: 999px;
     }
     .tog:hover { background: #DCEEFF; }
-    ol, ul { margin: 6px 0 0; padding-left: 20px; }
+    ol, ul { margin: 6px 0 0; padding: 0; padding-inline-start: 20px; }
+    .note-line { margin-top: 6px; font-size: 12px; color: #8A5A00; }
     li { margin: 2px 0; }
     .row { display: flex; align-items: center; gap: 9px; }
     .spin { width: 18px; height: 18px; border-radius: 50%; flex: none; border: 3px solid #DCEEFF; border-top-color: #2F7FE0; animation: spin .8s linear infinite; }
@@ -143,6 +144,11 @@
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
+    return e;
+  };
+  const elA = (tag, cls, text) => {
+    const e = el(tag, cls, text);
+    e.dir = 'auto'; // Hebrew shows right to left
     return e;
   };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -499,7 +505,7 @@
         if (inside) {
           const cs = getComputedStyle(p);
           if (cs.visibility === 'hidden' || cs.opacity === '0') break;
-          bits.push({ t: n.nodeValue.replace(/\s+/g, ' ').trim(), top: b.top, left: b.left, h: b.height });
+          bits.push({ t: n.nodeValue.replace(/\s+/g, ' ').trim(), top: b.top, left: b.left, right: b.right, h: b.height });
           break;
         }
       }
@@ -509,17 +515,34 @@
       const cx = b.left + b.width / 2;
       const cy = b.top + b.height / 2;
       if (f.value && cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
-        bits.push({ t: f.value.trim(), top: b.top, left: b.left, h: b.height });
+        bits.push({ t: f.value.trim(), top: b.top, left: b.left, right: b.right, h: b.height });
       }
     }
-    bits.sort((a, b) => (Math.abs(a.top - b.top) < Math.min(a.h, b.h) / 2 ? a.left - b.left : a.top - b.top));
-    const lines = [];
-    let last = null;
+    // Group the pieces into rows, top to bottom.
+    bits.sort((a, b) => a.top - b.top);
+    const rows = [];
     for (const b of bits) {
-      if (last && Math.abs(b.top - last.top) < Math.min(b.h, last.h) / 2) lines[lines.length - 1] += ' ' + b.t;
-      else lines.push(b.t);
-      last = b;
+      const row = rows[rows.length - 1];
+      if (row && Math.abs(b.top - row[0].top) < Math.min(b.h, row[0].h) / 2) row.push(b);
+      else rows.push([b]);
     }
+    // Hebrew rows read right to left. A wide gap between pieces usually
+    // means separate answer choices, so they're split with " | ".
+    const HEB = /[א-ת]/;
+    const lines = rows.map((row) => {
+      const rtl = row.filter((b) => HEB.test(b.t)).length > row.length / 2;
+      row.sort((a, b) => (rtl ? b.right - a.right : a.left - b.left));
+      let s = '';
+      row.forEach((b, i) => {
+        if (i) {
+          const p = row[i - 1];
+          const gap = rtl ? p.left - b.right : b.left - p.right;
+          s += gap > Math.max(b.h, p.h) * 1.2 ? ' | ' : ' ';
+        }
+        s += b.t;
+      });
+      return s;
+    });
     return lines.join('\n').slice(0, 4000);
   }
 
@@ -650,13 +673,15 @@
       row.append(el('div', 'spin'), el('span', 'muted', 'Thinking…'));
       body.append(row);
     } else {
-      if (wide && u.question) body.append(el('div', 'question', u.question));
-      body.append(el('div', 'answer', u.answer));
+      if (wide && u.question) body.append(elA('div', 'question', u.question));
+      body.append(elA('div', 'answer', u.answer));
+      if (u.note) body.append(el('div', 'note-line', u.note));
       const steps = u.steps || [];
       if (steps.length) {
         if (wide || stepsOpen) {
           const ol = el('ol');
-          for (const s of steps) ol.append(el('li', null, s));
+          ol.dir = u.lang === 'he' ? 'rtl' : 'auto';
+          for (const s of steps) ol.append(elA('li', null, s));
           body.append(ol);
         }
         if (!wide) {
@@ -682,7 +707,7 @@
         h.innerHTML = svg('bulb', 14);
         h.append('EXPLANATION');
         exp.append(h);
-        if (u.explanation) appendText(exp, u.explanation);
+        if (u.explanation) appendText(exp, u.explanation, u.lang === 'he');
         if (u.explaining) {
           const row = el('div', 'row');
           row.append(el('div', 'spin'), el('span', 'muted', 'Explaining…'));
@@ -730,7 +755,7 @@
       s.innerHTML = svg(ic, 15);
       pop.append(s);
     } else pop.append(el('span', 'dot'));
-    pop.append(el('span', 'mt', text));
+    pop.append(elA('span', 'mt', text));
     pop.onclick = () => {
       miniOpen = true;
       render(state);
@@ -740,7 +765,7 @@
   }
 
   // Simple Markdown for the explanation: paragraphs and lists, no HTML.
-  function appendText(box, text) {
+  function appendText(box, text, rtl = false) {
     let list = null;
     for (const raw of text.replace(/\*\*|__/g, '').replace(/\$/g, '').split('\n')) {
       const line = raw.replace(/^#+\s*/, '').trim();
@@ -749,12 +774,13 @@
       if (m) {
         if (!list) {
           list = el(/\d/.test(m[1]) ? 'ol' : 'ul');
+          list.dir = rtl ? 'rtl' : 'auto';
           box.append(list);
         }
-        list.append(el('li', null, m[2]));
+        list.append(elA('li', null, m[2]));
       } else {
         list = null;
-        box.append(el('p', null, line));
+        box.append(elA('p', null, line));
       }
     }
   }

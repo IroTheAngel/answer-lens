@@ -11,6 +11,7 @@ export const DEFAULTS = {
   subtle: false, // small faded button + one-line answers that don't cover the page
   pageAnswers: true, // off = answers only show in the side panel
   invisibleButton: false, // subtle mode: button can't be seen but its spot still works
+  answerLang: 'auto', // auto = Hebrew answers for Hebrew questions, or 'en' / 'he'
 };
 
 export async function getSettings() {

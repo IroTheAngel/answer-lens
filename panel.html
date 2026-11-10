@@ -115,6 +115,21 @@
       </div>
     </div>
 
+    <h3 class="sec">Language</h3>
+    <div class="group-box">
+      <div class="opt"><span><b>Answer language</b><small>Auto = Hebrew answers for Hebrew questions, English for the rest.</small></span>
+        <select id="opt-lang" class="sel">
+          <option value="auto">Auto</option>
+          <option value="en">English</option>
+          <option value="he">עברית (Hebrew)</option>
+        </select>
+      </div>
+      <div class="opt col">
+        <div class="opt-top"><span><b>Hebrew</b><small>Uses Chrome's built-in translator, free and offline. Hebrew questions are translated into English for the AI, and the answer comes back in Hebrew.</small></span><b id="he-state" class="val"></b></div>
+        <div id="he-setup"></div>
+      </div>
+    </div>
+
     <h3 class="sec">Advanced</h3>
     <div class="group-box">
       <div class="opt"><span><b>AI model</b><small>Gemini Nano, built into Chrome. Runs on this PC.</small></span><span id="ai-info" class="val"></span></div>

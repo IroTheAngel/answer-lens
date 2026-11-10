@@ -3,6 +3,7 @@ import { session, promptJSON, whenReady, notReadyText, errText } from './ai.js';
 import { icon } from './icons.js';
 import { esc } from './md.js';
 import { load, save, uid, timeAgo } from './store.js';
+import { isHebrew, heReady, heNotReadyText, toEn, toHe } from './translate.js';
 
 const $ = (s) => document.querySelector(s);
 let ctx;
@@ -77,7 +78,7 @@ function renderList() {
   for (const s of sets) {
     const row = document.createElement('button');
     row.className = 'set-row';
-    row.innerHTML = `<span class="set-ic">${icon('cards', 20)}</span><span class="set-txt"><b></b><small></small></span>${icon('right', 16)}`;
+    row.innerHTML = `<span class="set-ic">${icon('cards', 20)}</span><span class="set-txt"><b dir="auto"></b><small></small></span>${icon('right', 16)}`;
     row.querySelector('b').textContent = s.title;
     row.querySelector('small').textContent = `${s.cards.length} cards · ${timeAgo(s.created)}`;
     row.addEventListener('click', () => openSet(s));
@@ -122,7 +123,7 @@ function renderNew() {
     </div>
     <form class="new-set" autocomplete="off">
       <label for="st-topic">What do you want to study?</label>
-      <textarea id="st-topic" rows="3" maxlength="600" placeholder="e.g. The planets of the solar system, for a 7th grade science test"></textarea>
+      <textarea id="st-topic" dir="auto" rows="3" maxlength="600" placeholder="e.g. The planets of the solar system, for a 7th grade science test"></textarea>
       <p class="muted small">The more specific, the better the cards.</p>
       <label for="st-count">Number of cards</label>
       <select id="st-count"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
@@ -153,6 +154,13 @@ async function make() {
   let title = topic.slice(0, 50);
   try {
     if (!(await whenReady())) throw new Error(notReadyText());
+    // Hebrew: make the cards in English, then translate them.
+    const lang = ctx.settings().answerLang;
+    const qHe = isHebrew(topic);
+    const wantHe = lang === 'he' || (lang !== 'en' && qHe);
+    const hebrew = (qHe || wantHe) && (await heReady());
+    if ((qHe || lang === 'he') && !hebrew) ctx.toast(heNotReadyText());
+    const topicEn = qHe && hebrew ? await toEn(topic) : topic;
     const sess = await session('study');
     // Small batches work better with the on-device AI.
     while (cards.length < count && !ctl.signal.aborted) {
@@ -160,7 +168,7 @@ async function make() {
       prog.innerHTML = `<div class="thinking"><div class="spin"></div><span>Making cards… ${cards.length} / ${count}</span></div>`;
       const prompt = cards.length
         ? `Make ${n} more different flashcards about the same topic. Don't repeat these fronts: ${cards.map((c) => c.q).join(' | ')}`
-        : `Make ${n} flashcards about: ${topic}\nAlso give the set a short title.`;
+        : `Make ${n} flashcards about: ${topicEn}\nAlso give the set a short title.`;
       const r = await promptJSON(sess, prompt, SCHEMA, ctl.signal);
       if (!cards.length && r.title) title = String(r.title).slice(0, 60);
       const fresh = (r.cards || [])
@@ -172,6 +180,15 @@ async function make() {
     sess.destroy?.();
     if (ctl.signal.aborted) return;
     if (!cards.length) throw new Error('The AI didn\'t make any cards. Try describing the topic differently.');
+    if (wantHe && hebrew) {
+      prog.innerHTML = '<div class="thinking"><div class="spin"></div><span>Translating to Hebrew…</span></div>';
+      title = qHe ? topic.slice(0, 60) : await toHe(title);
+      for (const c of cards) {
+        c.q = await toHe(c.q);
+        c.a = await toHe(c.a);
+      }
+      if (ctl.signal.aborted) return;
+    }
     const set = { id: uid(), title, topic, created: Date.now(), cards };
     sets.unshift(set);
     persist();
@@ -191,7 +208,7 @@ function renderViewer() {
   b.innerHTML = `
     <div class="viewer-head">
       <button class="icon-btn" id="st-back" title="All sets">${icon('left', 20)}</button>
-      <div class="vh-title"></div>
+      <div class="vh-title" dir="auto"></div>
       <button class="icon-btn" id="st-info" title="Set info">${icon('info', 18)}</button>
       <button class="icon-btn" id="st-edit" title="Edit cards">${icon('edit', 18)}</button>
       <button class="icon-btn" id="st-del" title="Delete set">${icon('trash', 18)}</button>
@@ -200,8 +217,8 @@ function renderViewer() {
     ${card ? `
     <div class="flashcard${flipped ? ' flipped' : ''}" tabindex="0" title="Click to flip">
       <div class="fc-inner">
-        <div class="face front"><span class="side">QUESTION</span><div class="fc-text"></div></div>
-        <div class="face back"><span class="side">ANSWER</span><div class="fc-text"></div></div>
+        <div class="face front"><span class="side">QUESTION</span><div class="fc-text" dir="auto"></div></div>
+        <div class="face back"><span class="side">ANSWER</span><div class="fc-text" dir="auto"></div></div>
       </div>
     </div>
     <div class="viewer-nav">
@@ -293,7 +310,7 @@ function renderEdit() {
       <div class="vh-title">Edit set</div>
     </div>
     <label class="field-label" for="st-title">Title</label>
-    <input id="st-title" class="field" maxlength="80">
+    <input id="st-title" class="field" maxlength="80" dir="auto">
     <div class="edit-cards"></div>
     <button class="btn-line wide" id="st-add">${icon('plus', 16)} Add card</button>
     <div class="new-actions"><button class="btn-line" id="st-cancel">Cancel</button><button class="btn" id="st-save">Save</button></div>`;
@@ -304,7 +321,7 @@ function renderEdit() {
     draft.forEach((c, i) => {
       const row = document.createElement('div');
       row.className = 'edit-card';
-      row.innerHTML = `<div class="ec-head"><span>Card ${i + 1}</span><button class="mini" title="Remove card">${icon('x', 14)}</button></div><textarea rows="2" placeholder="Question / term"></textarea><textarea rows="2" placeholder="Answer"></textarea>`;
+      row.innerHTML = `<div class="ec-head"><span>Card ${i + 1}</span><button class="mini" title="Remove card">${icon('x', 14)}</button></div><textarea rows="2" dir="auto" placeholder="Question / term"></textarea><textarea rows="2" dir="auto" placeholder="Answer"></textarea>`;
       const [q, a] = row.querySelectorAll('textarea');
       q.value = c.q;
       a.value = c.a;

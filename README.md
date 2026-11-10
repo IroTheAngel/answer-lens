@@ -37,11 +37,12 @@ The answer pops up with a copy button, an explain button and the steps.
 - **Chat**: full AI chat. Saved chats grouped by date, search, new chat, delete (Shift + click skips the question). You can add up to 10 pictures (button, paste or drop), turn on "Think harder", edit and resend your messages, and copy any message or code block. Maths is shown properly.
 - **Study**: flashcard sets. The AI makes them from a topic, or you can make them from your snapped answers. Flip with a click or Space, move with ← →, shuffle, reset, edit/add/remove cards, delete sets.
 - **Settings**: on/off, Smart Scan, Shift + click area select, the button on pages, answer display time, popup position (3×3 grid or next to the snap), explain the last question, open chat, shortcuts, clear history, reset all settings.
+- **Hebrew** (Settings → Language): Hebrew questions are translated into English for the AI with Chrome's built-in translator, and the answer comes back in Hebrew, shown right to left. When the answer is one of the choices on the page, you see that choice exactly as the page wrote it. Press **Set up Hebrew** once (a small download). "Answer language" can be Auto, English or Hebrew.
 - **Subtle mode** (Settings → Appearance): the button gets small and faded until you hover over it, and answers show as one small line that doesn't cover the page. Click the line to see the steps. With Subtle mode on, you can also turn on **Invisible button**: the button can't be seen, but clicking its spot still snaps. You can also turn off "Show answers on the page" so answers only appear in the panel.
 
 ## Good to know
 
 - The side panel is where the AI runs, so it has to be open. The button and the shortcuts open it for you.
-- The on-device AI is small. It's fast and free, but it can be wrong, especially on hard maths. It answers in English.
+- The on-device AI is small. It's fast and free, but it can be wrong, especially on hard maths. It thinks in English; Hebrew goes through the translator, so a strange translation can make an answer wrong.
 - Everything (history, chats, flashcards) is saved only on this PC.
 - If the panel says the AI isn't available, open `chrome://on-device-internals` to see why.

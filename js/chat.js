@@ -3,6 +3,7 @@ import { ai, session, stream, SYSTEMS, THINK_NOTE, errText, isTooLong, whenReady
 import { icon } from './icons.js';
 import { md, plain } from './md.js';
 import { load, save, uid, toJpeg, dataUrlToBlob, dayGroup, copyText, getSettings, setSettings } from './store.js';
+import { isHebrew, heReady, heNotReadyText, toEn, mdToHe } from './translate.js';
 
 const MAX_CHATS = 100;
 const MAX_PICS = 10;
@@ -144,11 +145,19 @@ async function send(text, images) {
   const think = $('#chat-think').checked;
   const system = SYSTEMS.chat + (think ? THINK_NOTE : '');
   const n = active.messages.length - 2; // messages before this turn
+  // Hebrew: the AI gets an English translation, and its reply comes back in Hebrew.
+  const lang = ctx.settings().answerLang;
+  const qHe = isHebrew(text);
+  const wantHe = lang === 'he' || (lang !== 'en' && qHe);
+  let hebrew = false;
   try {
     if (!(await whenReady())) throw new Error(notReadyText());
+    hebrew = (qHe || wantHe) && (await heReady());
+    if ((qHe || lang === 'he') && !hebrew) ctx.toast(heNotReadyText());
+    if (qHe && hebrew) user.textEn = await toEn(text);
     const key = `${active.id}|${n}|${think}`;
     if (!sess || sessKey !== key) sess = await makeSession(system, active.messages.slice(0, n));
-    let input = text || 'What is in this picture?';
+    let input = user.textEn || text || 'What is in this picture?';
     if (images.length) {
       if (ai.mode === 'image') {
         const blobs = await Promise.all(images.map(dataUrlToBlob));
@@ -157,7 +166,14 @@ async function send(text, images) {
         ctx.toast('This Chrome\'s AI can\'t read pictures yet, so only your text was sent.');
       }
     }
-    await run(input, reply, system);
+    const toHebrew = wantHe && hebrew;
+    await run(input, reply, system, false, toHebrew ? 'textEn' : 'text');
+    if (toHebrew) {
+      // Translate the answer (the "reasoning" part stays in English).
+      const { reason, answer } = splitThink(reply.textEn);
+      reply.text = (reason ? `<think>${reason}</think>` : '') + (await mdToHe(answer));
+      reply.lang = 'he';
+    }
     sessKey = `${active.id}|${active.messages.length}|${think}`;
   } catch (e) {
     if (busy?.signal.aborted) {
@@ -175,10 +191,11 @@ async function send(text, images) {
   persist();
 }
 
-async function run(input, reply, system, retried = false) {
+// field = "text" (shown as it's written) or "textEn" (kept hidden until it's translated)
+async function run(input, reply, system, retried = false, field = 'text') {
   try {
     for await (const full of stream(sess, input, busy.signal)) {
-      reply.text = full;
+      reply[field] = full;
       renderLast();
     }
   } catch (e) {
@@ -186,21 +203,22 @@ async function run(input, reply, system, retried = false) {
       // Too long for the on-device AI: keep only the last few messages.
       const n = active.messages.length - 2;
       sess = await makeSession(system, active.messages.slice(Math.max(0, n - 6), n));
-      reply.text = '';
-      return run(input, reply, system, true);
+      reply[field] = '';
+      return run(input, reply, system, true, field);
     }
     throw e;
   }
 }
 
+// The AI remembers the chat in English (Hebrew messages keep an English copy).
 function makeSession(system, msgs) {
   const history = msgs
-    .filter((m) => !m.error && m.text)
+    .filter((m) => !m.error && (m.textEn || m.text))
     .map((m) => ({
       role: m.role,
       content: m.role === 'assistant'
-        ? splitThink(m.text).answer
-        : m.text + (m.images?.length ? `\n[${m.images.length} picture(s) were attached]` : ''),
+        ? splitThink(m.textEn || m.text).answer
+        : (m.textEn || m.text) + (m.images?.length ? `\n[${m.images.length} picture(s) were attached]` : ''),
     }));
   return session('chat', { history, system });
 }
@@ -305,7 +323,7 @@ function msgEl(m, i) {
       for (const p of m.images) g.append(Object.assign(document.createElement('img'), { src: p, alt: '' }));
       el.append(g);
     }
-    if (m.text) el.append(Object.assign(document.createElement('div'), { className: 'bubble', textContent: m.text }));
+    if (m.text) el.append(Object.assign(document.createElement('div'), { className: 'bubble', textContent: m.text, dir: 'auto' }));
     el.append(actions(m, i, true));
   } else {
     const { reason, answer, open } = splitThink(m.text);
@@ -319,6 +337,7 @@ function msgEl(m, i) {
     }
     const body = document.createElement('div');
     body.className = 'bubble md';
+    body.dir = m.lang === 'he' ? 'rtl' : 'auto';
     if (!answer && busy && i === active.messages.length - 1 && !open) {
       body.innerHTML = '<div class="thinking"><div class="spin"></div><span>Thinking…</span></div>';
     } else body.innerHTML = md(answer);
