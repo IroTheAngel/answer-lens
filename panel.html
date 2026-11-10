@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Answer Lens</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="top">
+    <img class="logo" src="icons/logo.png" alt="">
+    <div class="brand">
+      <h1>Answer Lens</h1>
+      <p>Free · unlimited · on your PC</p>
+    </div>
+    <label class="power" title="Turn Answer Lens on or off">
+      <input type="checkbox" id="power">
+      <span class="track"><span class="knob"></span></span>
+      <span id="power-txt">On</span>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="answers" class="on"><i data-icon="lens"></i><span>Answers</span></button>
+    <button data-tab="chat"><i data-icon="chat"></i><span>Chat</span></button>
+    <button data-tab="study"><i data-icon="cards"></i><span>Study</span></button>
+    <button data-tab="settings"><i data-icon="gear"></i><span>Settings</span></button>
+  </nav>
+
+  <div id="off-banner" class="off-banner" hidden><i data-icon="power" data-size="16"></i> Answer Lens is off. Turn it on with the switch above.</div>
+
+  <!-- Answers -->
+  <section id="tab-answers" class="page">
+    <div id="status"></div>
+    <div class="snap-row">
+      <button id="snap-screen" class="snap-btn main">
+        <i data-icon="screen" data-size="22"></i>
+        <span>Snap screen<small id="k-full"></small></span>
+      </button>
+      <button id="snap-area" class="snap-btn">
+        <i data-icon="area" data-size="20"></i>
+        <span>Select area<small id="k-area"></small></span>
+      </button>
+    </div>
+    <div class="tools-row">
+      <label class="search"><i data-icon="search" data-size="16"></i><input id="hist-search" placeholder="Search answers"></label>
+      <button id="explain-last" class="chip" title="Explain the last answer step by step"><i data-icon="bulb" data-size="15"></i> Explain last</button>
+    </div>
+    <div id="feed"></div>
+  </section>
+
+  <!-- Chat -->
+  <section id="tab-chat" class="page" hidden>
+    <div class="chat-bar">
+      <button id="chat-history-btn" class="icon-btn" title="Chat history"><i data-icon="history"></i></button>
+      <div id="chat-title" class="chat-title">New chat</div>
+      <button id="chat-new" class="icon-btn" title="New chat"><i data-icon="plus"></i></button>
+    </div>
+    <div id="chat-drawer" class="drawer" hidden>
+      <label class="search"><i data-icon="search" data-size="16"></i><input id="chat-search" placeholder="Search chats"></label>
+      <button id="chat-new-2" class="btn-line wide"><i data-icon="plus" data-size="16"></i> New chat</button>
+      <div id="chat-list"></div>
+    </div>
+    <div id="chat-msgs" class="chat-msgs"></div>
+    <form id="composer" autocomplete="off">
+      <div id="attach-row" class="attach-row"></div>
+      <div class="composer-box">
+        <textarea id="chat-input" rows="1" placeholder="Message Answer Lens…"></textarea>
+        <div class="composer-tools">
+          <button type="button" id="chat-attach" class="icon-btn small" title="Add pictures (or paste / drop them)"><i data-icon="image"></i></button>
+          <input type="file" id="chat-file" accept="image/*" multiple hidden>
+          <label class="think" title="The AI reasons step by step before it answers">
+            <input type="checkbox" id="chat-think"><i data-icon="spark" data-size="15"></i> Think harder
+          </label>
+          <span class="grow"></span>
+          <button id="chat-send" class="send-btn" title="Send"><i data-icon="send"></i></button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- Study -->
+  <section id="tab-study" class="page" hidden>
+    <div id="study-view"></div>
+  </section>
+
+  <!-- Settings -->
+  <section id="tab-settings" class="page" hidden>
+    <h3 class="sec">General</h3>
+    <div class="group-box">
+      <label class="opt"><span><b>Enable Answer Lens</b><small>The master switch.</small></span><input type="checkbox" id="opt-enabled" class="sw"></label>
+      <label class="opt"><span><b>Smart Scan</b><small>Answers every kind of question. Off = only multiple choice.</small></span><input type="checkbox" id="opt-smart" class="sw"></label>
+      <label class="opt"><span><b>Shift + click to select an area</b><small>Shift + click the button, then drag around the question.</small></span><input type="checkbox" id="opt-shift" class="sw"></label>
+      <label class="opt"><span><b>Snap button on pages</b><small>Off = use the shortcut or this panel.</small></span><input type="checkbox" id="opt-button" class="sw"></label>
+      <div class="opt col">
+        <div class="opt-top"><span><b>Answer display time</b><small>How long a short answer stays up. Hovering keeps it open.</small></span><b id="dt-val" class="val">3 s</b></div>
+        <input type="range" id="opt-time" min="0.5" max="60" step="0.5">
+        <label class="check"><input type="checkbox" id="opt-keep"> Keep answers until I close them</label>
+      </div>
+    </div>
+
+    <h3 class="sec">Appearance</h3>
+    <div class="group-box">
+      <label class="opt"><span><b>Subtle mode</b><small>A small, faded button and a one-line answer, so nothing covers the page. Hover to see it clearly; click the answer for the steps.</small></span><input type="checkbox" id="opt-subtle" class="sw"></label>
+      <label class="opt sub"><span><b>Invisible button</b><small>Needs Subtle mode. You can't see the button, but clicking its spot still snaps (bottom-left, unless you moved it). The pointer turns into a hand over it.</small></span><input type="checkbox" id="opt-ghost" class="sw"></label>
+      <label class="opt"><span><b>Show answers on the page</b><small>Off = answers only show in this panel.</small></span><input type="checkbox" id="opt-page" class="sw"></label>
+      <div class="opt col">
+        <div class="opt-top"><span><b>Answer popup position</b><small>Click a spot on the screen below.</small></span><b id="pos-name" class="val"></b></div>
+        <div id="pos-screen" class="pos-screen">
+          <div class="pv-snap"></div>
+          <div class="pv-pop"><span></span><span></span></div>
+          <div id="pos-grid" class="pos-grid"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="opt-near"> Show it next to what I snapped</label>
+      </div>
+    </div>
+
+    <h3 class="sec">Advanced</h3>
+    <div class="group-box">
+      <div class="opt"><span><b>AI model</b><small>Gemini Nano, built into Chrome. Runs on this PC.</small></span><span id="ai-info" class="val"></span></div>
+      <button id="set-explain" class="row-btn"><i data-icon="bulb"></i> Explain last question</button>
+      <button id="set-chat" class="row-btn"><i data-icon="chat"></i> Open AI chat</button>
+    </div>
+
+    <h3 class="sec">Shortcuts</h3>
+    <div class="group-box">
+      <div id="shortcut-list"></div>
+      <button id="set-keys" class="row-btn"><i data-icon="keyboard"></i> Change keyboard shortcuts</button>
+    </div>
+
+    <h3 class="sec">Data</h3>
+    <div class="group-box">
+      <button id="set-clear-hist" class="row-btn danger"><i data-icon="trash"></i> Clear answer history</button>
+      <button id="set-clear-chats" class="row-btn danger"><i data-icon="trash"></i> Delete all chats</button>
+      <button id="set-reset" class="row-btn danger"><i data-icon="reset"></i> Reset all settings</button>
+    </div>
+    <p class="muted small center about">Answer Lens <span id="version"></span> · everything stays on your PC</p>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="js/panel.js"></script>
+</body>
+</html>
