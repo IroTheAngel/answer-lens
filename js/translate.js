@@ -117,11 +117,26 @@ export async function toEn(text) {
   return translate('he', 'en', text);
 }
 
-// Leaves maths-only text (like "m = 20, p = 1") alone: only real words are translated.
+// Leaves maths-only text (like "m = 20, p = 1") alone: only real words
+// (and units like "cm") are translated.
 export async function toHe(text) {
   const words = String(text).replace(/\$[^$]*\$/g, '');
-  if (!words.trim() || !/[A-Za-z]{3,}/.test(words)) return text;
+  if (!words.trim() || !/[A-Za-z]{2,}/.test(words)) return text;
   return translate('en', 'he', text);
+}
+
+// The answer in Hebrew, line by line, so each part ("a) ...", "b) ...") is
+// matched to its own choice on the page. a/b/c labels become א/ב/ג.
+const HE_LABEL = { a: 'א', b: 'ב', c: 'ג', d: 'ד', e: 'ה', f: 'ו' };
+export async function answerToHe(answer, pieces) {
+  const lines = String(answer).split('\n').map((l) => l.trim()).filter(Boolean);
+  const out = await Promise.all(lines.map(async (line) => {
+    const m = lines.length > 1 && line.match(/^(?:([a-f])|([א-ו]))\s*[).:׳']\s*(.+)$/i);
+    const body = m ? m[3] : line;
+    const label = m ? `${m[1] ? HE_LABEL[m[1].toLowerCase()] : m[2]}. ` : '';
+    return label + (matchChoice(body, pieces) || (await toHe(body)));
+  }));
+  return out.join('\n');
 }
 
 const noMath = (s) => String(s).replace(/\$[^$\n]*\$/g, ' ');
@@ -175,11 +190,22 @@ export async function textToEn(text) {
   return { text: en.map((row) => row.join(' | ')).join('\n'), pieces };
 }
 
+// Short units count as the long word, so "500 m" matches "500 meters".
+const UNITS = {
+  m: 'meters', meter: 'meters', metre: 'meters', metres: 'meters', cm: 'centimeters', centimeter: 'centimeters',
+  km: 'kilometers', kilometer: 'kilometers', mm: 'millimeters', kg: 'kilograms', kilogram: 'kilograms',
+  g: 'grams', gram: 'grams', l: 'liters', liter: 'liters', litre: 'liters', s: 'seconds', sec: 'seconds',
+  min: 'minutes', minute: 'minutes', h: 'hours', hr: 'hours', hour: 'hours',
+};
 const norm = (s) => String(s)
   .toLowerCase()
   .replace(/^\s*\(?[a-d1-4][).:]\s+/i, '')
+  .replace(/(\d),(?=\d{3}\b)/g, '$1') // 5,000 = 5000
   .replace(/[^\p{L}\p{N}]+/gu, ' ')
-  .trim();
+  .trim()
+  .split(' ')
+  .map((w) => UNITS[w] || w)
+  .join(' ');
 
 // If the English answer is one of the page's choices, give back that choice
 // exactly as the page wrote it (Hebrew words, or maths like "m = 20, p = 1").
@@ -195,8 +221,14 @@ export function matchChoice(answerEn, pieces) {
     if (!e) continue;
     let sc = 0;
     if (e === a) sc = 3;
-    else if (e.length >= 3 && a.length >= 3 && (a.includes(e) || e.includes(a))) {
-      sc = 1 + Math.min(e.length, a.length) / Math.max(e.length, a.length);
+    else {
+      // Whole words/numbers only: "500" is in "500 meters", but not in "50000".
+      const ta = a.split(' ');
+      const te = e.split(' ');
+      const [short, long] = ta.length <= te.length ? [ta, te] : [te, ta];
+      if (short.join('').length >= 2 && ` ${long.join(' ')} `.includes(` ${short.join(' ')} `)) {
+        sc = 1 + short.length / long.length;
+      }
     }
     if (sc > score) {
       score = sc;

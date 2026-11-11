@@ -2,7 +2,7 @@
 // chrome.* APIs here, so it can run in the hidden engine page (side panel
 // closed) or inside the side panel.
 import { ai, session, stream, whenReady, notReadyText, errText, checkAI } from './ai.js';
-import { he, checkHe, isHebrew, heReady, heNotReadyText, textToEn, matchChoice, toHe, mdToHe } from './translate.js';
+import { he, checkHe, isHebrew, heReady, heNotReadyText, textToEn, toHe, mdToHe, answerToHe } from './translate.js';
 import { dataUrlToBlob } from './store.js';
 
 export const isNoResult = (e) =>
@@ -152,9 +152,13 @@ export async function solve(entry, parts, s, emit, signal, fresh = false) {
   });
   const input = useImage ? [{ role: 'user', content }] : content.map((c) => c.value).join('\n\n');
 
+  // Questions with numbers get the "work it out first" prompt: slower, but
+  // a small AI gets calculations right far more often that way.
+  const allText = parts.map((p) => p.textEn || p.text).join(' ');
+  const mathy = allText.includes('$') || (allText.match(/\d+/g) || []).length >= 2;
   const t0 = performance.now();
   try {
-    const sess = await session('snap');
+    const sess = await session(mathy ? 'snapMath' : 'snap');
     let heAnswer = false; // Hebrew answer already shown?
     for await (const full of stream(sess, input, signal)) {
       const reply = parseReply(full);
@@ -162,9 +166,12 @@ export async function solve(entry, parts, s, emit, signal, fresh = false) {
         entry.en = reply;
         // Show the Hebrew answer as soon as its line is finished; the steps
         // get translated at the end.
-        if (!heAnswer && reply.answer && /ANSWER\s*:[^\n]*\n/i.test(full) && !isNoResult(reply)) {
+        if (!heAnswer && reply.answer && /ANSWER\s*:\s*[^\n]+\n/i.test(full) && !isNoResult(reply)) {
           heAnswer = true;
-          entry.answer = matchChoice(reply.answer, pieces) || (await toHe(reply.answer));
+          // Only lines that are fully written (the last one may still be growing).
+          const finished = /ANSWER\s*:[\s\S]*?\n\s*(TYPE|STEPS|QUESTION)\s*:/i.test(full);
+          const lines = reply.answer.split('\n');
+          entry.answer = await answerToHe((finished ? lines : lines.slice(0, -1)).join('\n') || lines[0], pieces);
           entry.lang = 'he';
           entry.status = 'streaming';
           emit(entry, {}, true);
@@ -181,9 +188,10 @@ export async function solve(entry, parts, s, emit, signal, fresh = false) {
       entry.type = en.type;
       if (isNoResult(en)) Object.assign(entry, { answer: en.answer, steps: en.steps, question: en.question });
       else {
-        // Everything left is translated at the same time.
+        // Everything is translated at the same time (the full answer again:
+        // more parts may have been written after the first line was shown).
         const [answer, question, ...steps] = await Promise.all([
-          heAnswer ? entry.answer : matchChoice(en.answer, pieces) || toHe(en.answer),
+          answerToHe(en.answer, pieces),
           en.question ? toHe(en.question) : '',
           ...en.steps.map((st) => toHe(st)),
         ]);

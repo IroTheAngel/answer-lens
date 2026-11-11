@@ -44,6 +44,7 @@ The answer pops up with a copy button, an explain button and the steps.
 ## Good to know
 
 - **You can close the side panel.** Snapping keeps working: the AI runs in a hidden page that stays loaded, so answers start right away. The panel is only needed for the first-time setup, your saved answers, chat, flashcards and settings. (If a Chrome version can't run the AI in a hidden page, Answer Lens falls back to running it in the panel and asks you to open it.)
+- **Maths questions** (anything with numbers) are worked out step by step before the answer, which makes the small AI much more accurate. Pages with several questions (a, b or א, ב) get an answer for each part.
 - **Speed:** reading a picture is the slowest thing the on-device AI does, so Answer Lens reads the page's text and only sends the picture when there's (almost) no text, when you Ctrl + click, or when **Read the picture too** is on in Settings. The answer comes first, then 1 to 3 short steps.
 - The on-device AI is small. It's fast and free, but it can be wrong, especially on hard maths. It thinks in English; Hebrew goes through the translator, so a strange translation can make an answer wrong.
 - Everything (history, chats, flashcards) is saved only on this PC.
