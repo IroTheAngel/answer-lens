@@ -44,18 +44,26 @@ export async function onSnap(msg, tab) {
   if (!s.enabled) return { error: 'Answer Lens is turned off. Turn it on at the top of its panel.' };
   const entry = newEntry({ title: msg.title, host: msg.host, detailed: !!msg.detailed, source: 'snap' });
   (async () => {
-    const parts = [];
-    for (const shot of msg.shots || []) {
-      let blob = null;
-      try {
-        blob = await crop(shot.dataUrl, shot.rect, shot.vw);
-      } catch {}
-      parts.push({ blob, text: shot.text || '' });
+    // Reading a picture is the slowest thing the on-device AI does, so the
+    // picture only goes to the AI when the page has (almost) no text there,
+    // or when "Read the picture too" / Ctrl+click asks for it.
+    const needsPicture = (text) => s.readPictures || entry.detailed || text.replace(/\s+/g, '').length < 15;
+    const parts = await Promise.all((msg.shots || []).map(async (shot) => ({
+      shot,
+      text: shot.text || '',
+      blob: needsPicture(shot.text || '') ? await crop(shot.dataUrl, shot.rect, shot.vw).catch(() => null) : null,
+    })));
+    solve(entry, parts, tab.id); // start the AI first…
+    // …then make the card's thumbnails while it works.
+    const thumbs = [];
+    for (const p of parts) {
+      const b = p.blob || (await crop(p.shot.dataUrl, p.shot.rect, p.shot.vw).catch(() => null));
+      const j = b && (await toJpeg(b, 560).catch(() => null));
+      if (j) thumbs.push(j);
     }
-    entry.thumbs = await Promise.all(parts.filter((p) => p.blob).map((p) => toJpeg(p.blob, 560).catch(() => null)));
-    entry.thumbs = entry.thumbs.filter(Boolean);
+    entry.thumbs = thumbs;
     renderCard(entry);
-    solve(entry, parts, tab.id);
+    if (entry.status === 'done' || entry.status === 'noresult') persist();
   })();
   return { id: entry.id };
 }
@@ -135,10 +143,10 @@ async function solve(entry, parts, tabId, fresh = false) {
   }
   const s = ctx.settings();
   let intro = parts.length > 1
-    ? `Here are ${parts.length} snaps from the same page. Together they show the question.`
+    ? `Here ${useImage ? 'are' : 'is the text from'} ${parts.length} snaps of the same page. Together they show the question.`
     : entry.source === 'menu' && !parts[0]?.blob
       ? 'Here is some text I selected on a web page.'
-      : 'Here is a snap of part of a web page.';
+      : useImage ? 'Here is a snap of part of a web page.' : 'Here is the text from part of a web page I snapped.';
   if (!s.smartScan) {
     intro += '\nOnly answer multiple-choice or true/false questions. If it isn\'t one, reply "TYPE: none" and "ANSWER: No multiple-choice question found".';
   }
@@ -151,13 +159,16 @@ async function solve(entry, parts, tabId, fresh = false) {
   const heOk = (qHe || wantHe) && (await heReady());
   const pieces = [];
   if (qHe && heOk) {
-    for (const p of parts) {
-      if (!p.text.trim()) continue;
-      const t = await textToEn(p.text);
-      p.textEn = t.text;
+    // All the snaps are translated at the same time.
+    const done = await Promise.all(parts.map((p) => (p.text.trim() ? textToEn(p.text) : null)));
+    done.forEach((t, i) => {
+      if (!t) return;
+      parts[i].textEn = t.text;
       pieces.push(...t.pieces);
-    }
-    intro += '\nThe question is in Hebrew. Read the English translation below; the picture shows the original Hebrew.';
+    });
+    intro += useImage
+      ? '\nThe question is in Hebrew. Read the English translation below; the picture shows the original Hebrew.'
+      : '\nThe question was in Hebrew; this is an English translation.';
   }
   entry.note = (qHe || s.answerLang === 'he') && !heOk ? heNotReadyText() : '';
   const toHebrew = wantHe && heOk;
@@ -170,7 +181,8 @@ async function solve(entry, parts, tabId, fresh = false) {
   entry.readEn = qHe && heOk ? parts.map((p) => (p.textEn || '').trim()).filter(Boolean).join('\n—\n').slice(0, 2500) : '';
 
   const content = [{ type: 'text', value: intro }];
-  const each = parts.length > 1 ? 2000 : 3500;
+  // Less text = the AI starts answering sooner.
+  const each = parts.length > 1 ? 1200 : 2000;
   parts.forEach((p, i) => {
     if (useImage && p.blob) content.push({ type: 'image', value: p.blob });
     const text = p.textEn || p.text;
@@ -190,11 +202,21 @@ async function solve(entry, parts, tabId, fresh = false) {
   let lastSent = 0;
   try {
     const sess = await session('snap');
+    let heAnswer = false; // Hebrew answer already shown?
     for await (const full of stream(sess, input, ctl.signal)) {
       const reply = parseReply(full);
       if (toHebrew) {
-        // Keep showing "Thinking…" until the Hebrew is ready.
         entry.en = reply;
+        // Show the Hebrew answer as soon as its line is finished; the steps
+        // get translated at the end.
+        if (!heAnswer && reply.answer && /ANSWER\s*:[^\n]*\n/i.test(full) && !isNoResult(reply)) {
+          heAnswer = true;
+          entry.answer = matchChoice(reply.answer, pieces) || (await toHe(reply.answer));
+          entry.lang = 'he';
+          entry.status = 'streaming';
+          renderCard(entry);
+          toTab(tabId, entry);
+        }
         continue;
       }
       Object.assign(entry, reply);
@@ -211,11 +233,13 @@ async function solve(entry, parts, tabId, fresh = false) {
       entry.type = en.type;
       if (isNoResult(en)) Object.assign(entry, { answer: en.answer, steps: en.steps, question: en.question });
       else {
-        entry.answer = matchChoice(en.answer, pieces) || (await toHe(en.answer));
-        entry.question = en.question ? await toHe(en.question) : '';
-        entry.steps = [];
-        for (const st of en.steps) entry.steps.push(await toHe(st));
-        entry.lang = 'he';
+        // Everything left is translated at the same time.
+        const [answer, question, ...steps] = await Promise.all([
+          heAnswer ? entry.answer : matchChoice(en.answer, pieces) || toHe(en.answer),
+          en.question ? toHe(en.question) : '',
+          ...en.steps.map((st) => toHe(st)),
+        ]);
+        Object.assign(entry, { answer, question, steps, lang: 'he' });
       }
     }
     entry.secs = (performance.now() - t0) / 1000;
@@ -292,7 +316,7 @@ async function crop(dataUrl, r, vw) {
   const long = Math.max(sw, sh);
   let z = 1;
   if (long < 600) z = Math.min(2.5, 600 / long);
-  if (long * z > 1600) z = 1600 / long;
+  if (long * z > 1024) z = 1024 / long; // smaller pictures are quicker for the AI
   const c = new OffscreenCanvas(Math.max(1, Math.round(sw * z)), Math.max(1, Math.round(sh * z)));
   const g = c.getContext('2d');
   g.imageSmoothingQuality = 'high';

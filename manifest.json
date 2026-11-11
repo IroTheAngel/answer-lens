@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Answer Lens",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Snap any question on a page and get the answer with steps, plus AI chat and flashcards. Free and unlimited: it runs on Chrome's built-in AI, on your own PC.",
   "minimum_chrome_version": "138",
   "icons": {

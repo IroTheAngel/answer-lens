@@ -344,10 +344,13 @@
     await frame();
     await sleep(40);
     try {
-      const r = await msg({ type: 'al-capture' });
-      if (!r?.dataUrl) throw new Error(r?.error || 'Couldn\'t take a screenshot of this page.');
+      // Ask for the screenshot first, then read the page while it's being taken.
+      const shot = msg({ type: 'al-capture' });
       const area = rect || { x: 0, y: 0, w: innerWidth, h: innerHeight };
-      return { dataUrl: r.dataUrl, rect, vw: innerWidth, vh: innerHeight, text: await textInRect(area, !rect) };
+      const text = textInRect(area, !rect);
+      const r = await shot;
+      if (!r?.dataUrl) throw new Error(r?.error || 'Couldn\'t take a screenshot of this page.');
+      return { dataUrl: r.dataUrl, rect, vw: innerWidth, vh: innerHeight, text: await text };
     } finally {
       host.style.visibility = '';
     }

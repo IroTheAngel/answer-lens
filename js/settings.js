@@ -10,6 +10,7 @@ const CELLS = ['tl', 'tc', 'tr', 'ml', 'mc', 'mr', 'bl', 'bc', 'br'];
 const TOGGLES = [
   ['opt-enabled', 'enabled'],
   ['opt-smart', 'smartScan'],
+  ['opt-pics', 'readPictures'],
   ['opt-shift', 'shiftArea'],
   ['opt-button', 'showButton'],
   ['opt-subtle', 'subtle'],

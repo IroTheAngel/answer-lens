@@ -3,6 +3,7 @@
 export const DEFAULTS = {
   enabled: true, // master switch
   smartScan: true, // off = only multiple-choice questions are answered
+  readPictures: false, // send the screenshot to the AI even when the page has text (slower)
   shiftArea: true, // Shift+click the button to select an area
   showButton: true, // floating button on pages
   displayTime: 3, // seconds a short answer stays up (0 = until closed)

@@ -43,7 +43,8 @@ The answer pops up with a copy button, an explain button and the steps.
 
 ## Good to know
 
-- The side panel is where the AI runs, so it has to be open. The button and the shortcuts open it for you.
+- The side panel is where the AI runs, so it has to be open. The button and the shortcuts open it for you. **Keep the panel open** between questions: then the AI is already loaded and answers start right away.
+- **Speed:** reading a picture is the slowest thing the on-device AI does, so Answer Lens reads the page's text and only sends the picture when there's (almost) no text, when you Ctrl + click, or when **Read the picture too** is on in Settings. The answer comes first, then 1 to 3 short steps.
 - The on-device AI is small. It's fast and free, but it can be wrong, especially on hard maths. It thinks in English; Hebrew goes through the translator, so a strange translation can make an answer wrong.
 - Everything (history, chats, flashcards) is saved only on this PC.
 - If the panel says the AI isn't available, open `chrome://on-device-internals` to see why.

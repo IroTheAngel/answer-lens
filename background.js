@@ -35,7 +35,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // A screenshot of what's visible in the tab.
   if (msg?.type === 'al-capture') {
     chrome.tabs
-      .captureVisibleTab(sender.tab.windowId, { format: 'jpeg', quality: 92 })
+      .captureVisibleTab(sender.tab.windowId, { format: 'jpeg', quality: 85 })
       .then((dataUrl) => sendResponse({ dataUrl }), (e) => sendResponse({ error: String(e?.message || e) }));
     return true;
   }

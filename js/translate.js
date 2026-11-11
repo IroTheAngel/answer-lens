@@ -97,16 +97,31 @@ export function heNotReadyText() {
   return 'Hebrew needs a one-time setup: Settings → Language → Set up Hebrew.';
 }
 
+// Remembers recent translations, so the same question or choices snapped
+// again are instant.
+const cache = new Map(); // "he>en|text" -> Promise<string>
+function translate(s, t, text) {
+  const key = `${s}>${t}|${text}`;
+  if (!cache.has(key)) {
+    cache.set(key, pair(s, t).then((tr) => tr.translate(text)).catch((e) => {
+      cache.delete(key);
+      throw e;
+    }));
+    if (cache.size > 800) cache.delete(cache.keys().next().value);
+  }
+  return cache.get(key);
+}
+
 export async function toEn(text) {
   if (!String(text).trim() || !isHebrew(text)) return text;
-  return (await pair('he', 'en')).translate(text);
+  return translate('he', 'en', text);
 }
 
 // Leaves maths-only text (like "m = 20, p = 1") alone: only real words are translated.
 export async function toHe(text) {
   const words = String(text).replace(/\$[^$]*\$/g, '');
   if (!words.trim() || !/[A-Za-z]{3,}/.test(words)) return text;
-  return (await pair('en', 'he')).translate(text);
+  return translate('en', 'he', text);
 }
 
 const noMath = (s) => String(s).replace(/\$[^$\n]*\$/g, ' ');
@@ -119,64 +134,45 @@ async function mixedToEn(piece) {
   if (maths.every((m) => m.length <= 14 && !m.includes('\\'))) {
     return toEn(piece.replace(/\$([^$\n]*)\$/g, '$1'));
   }
-  const out = [];
-  for (const part of piece.split(/(\$[^$\n]*\$)/)) {
-    out.push(part.startsWith('$') || !isHebrew(part) ? part : await toEn(part));
-  }
+  const out = await Promise.all(piece.split(/(\$[^$\n]*\$)/)
+    .map((part) => (part.startsWith('$') || !isHebrew(part) ? part : toEn(part))));
   return out.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 // Translates one line, but leaves maths ($...$) and `code` as they are.
 async function lineToHe(line) {
-  const parts = line.split(/(\$[^$\n]+\$|`[^`\n]+`)/);
-  const out = [];
-  for (const p of parts) {
-    if (!p || p.startsWith('$') || p.startsWith('`') || !/[A-Za-z]/.test(p)) out.push(p);
-    else {
-      const lead = p.match(/^\s*/)[0];
-      const trail = p.match(/\s*$/)[0];
-      out.push(lead + (await toHe(p.trim())) + trail);
-    }
-  }
+  const out = await Promise.all(line.split(/(\$[^$\n]+\$|`[^`\n]+`)/).map(async (p) => {
+    if (!p || p.startsWith('$') || p.startsWith('`') || !/[A-Za-z]/.test(p)) return p;
+    const lead = p.match(/^\s*/)[0];
+    const trail = p.match(/\s*$/)[0];
+    return lead + (await toHe(p.trim())) + trail;
+  }));
   return out.join('');
 }
 
-// Markdown to Hebrew, line by line: keeps headings, list marks and code blocks.
+// Markdown to Hebrew, all lines at once: keeps headings, list marks and code blocks.
 export async function mdToHe(md) {
-  const out = [];
   let code = false;
-  for (const line of String(md).split('\n')) {
+  const jobs = String(md).split('\n').map((line) => {
     if (/^\s*```/.test(line)) {
       code = !code;
-      out.push(line);
-      continue;
+      return line;
     }
-    if (code || !/[A-Za-z]/.test(line)) {
-      out.push(line);
-      continue;
-    }
+    if (code || !/[A-Za-z]/.test(line)) return line;
     const m = line.match(/^(\s*(?:#{1,4}\s+|\d+[.)]\s+|[-*•]\s+)?)(.*)$/);
-    out.push(m[1] + (await lineToHe(m[2].replace(/\*\*|__/g, ''))));
-  }
-  return out.join('\n');
+    return lineToHe(m[2].replace(/\*\*|__/g, '')).then((t) => m[1] + t);
+  });
+  return (await Promise.all(jobs)).join('\n');
 }
 
-// Page text, translated piece by piece ("a | b" pieces are answer choices).
+// Page text, all pieces translated at once ("a | b" pieces are answer choices).
 // Returns the English text plus each piece's original and English version,
 // so an English answer can be matched back to the exact Hebrew choice.
 export async function textToEn(text) {
-  const pieces = [];
-  const lines = [];
-  for (const line of String(text).split('\n')) {
-    const parts = [];
-    for (const piece of line.split(' | ')) {
-      const en = await mixedToEn(piece);
-      pieces.push({ he: piece, en });
-      parts.push(en);
-    }
-    lines.push(parts.join(' | '));
-  }
-  return { text: lines.join('\n'), pieces };
+  const rows = String(text).split('\n').map((line) => line.split(' | '));
+  const en = await Promise.all(rows.map((row) => Promise.all(row.map(mixedToEn))));
+  const pieces = rows.flatMap((row, i) => row.map((he, j) => ({ he, en: en[i][j] })));
+  return { text: en.map((row) => row.join(' | ')).join('\n'), pieces };
 }
 
 const norm = (s) => String(s)
