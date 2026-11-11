@@ -1,12 +1,16 @@
-// Answer Lens side panel: tabs, AI status, and messages from the page.
-import { ai, checkAI, setupAI, onAI, errText } from './ai.js';
+// Answer Lens side panel: tabs, AI status, history, chat, study and settings.
+// Snaps are answered by the engine in a hidden page, so they work with this
+// panel closed. On a Chrome whose hidden pages can't use the AI, this panel
+// runs the engine instead.
+import { ai, checkAI, setupAI, onAI } from './ai.js';
 import { icon } from './icons.js';
-import { initAnswers, onSnap, onAsk, explain, explainLast, getHistory, clearHistory } from './answers.js';
+import { initAnswers, explainLast, getHistory, clearHistory } from './answers.js';
 import { initChat, openChatWith, focusChat, clearChats } from './chat.js';
 import { initStudy } from './study.js';
 import { initSettings, settings } from './settings.js';
 import { resetSettings } from './store.js';
 import { he, checkHe, setupHe, onHe } from './translate.js';
+import { startEngine } from './engine.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -18,32 +22,12 @@ document.querySelectorAll('[data-icon]').forEach((el) => {
   el.outerHTML = icon(el.dataset.icon, +(el.dataset.size || 18));
 });
 
-// ---------- messages (listen straight away; work waits for start-up) ----------
-let ready;
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const win = sender.tab ? sender.tab.windowId : msg?.windowId;
-  if (myWindowId !== null && win != null && win !== myWindowId) return false;
-  const reply = (p) => p.then(sendResponse, (e) => sendResponse({ error: errText(e) }));
-  switch (msg?.type) {
-    case 'al-snap':
-      if (!sender.tab) return false;
-      reply(ready.then(() => onSnap(msg, sender.tab)));
-      return true;
-    case 'al-ask':
-      reply(ready.then(() => onAsk(msg)));
-      return true;
-    case 'al-explain':
-      if (!sender.tab) return false;
-      ready.then(() => {
-        showTab('answers');
-        explain(msg.id, sender.tab.id);
-      });
-      sendResponse({ ok: true });
-      return false;
-    default:
-      return false;
-  }
-});
+// The backup engine: only gets jobs when the hidden page can't run the AI,
+// and only for tabs in this window.
+startEngine('panel', (job) => job.windowId == null || myWindowId == null || job.windowId === myWindowId);
+
+// After the one-time setup, the hidden engine page should look again.
+const recheck = () => chrome.runtime.sendMessage({ type: 'al-engine-recheck' }).catch(() => {});
 
 // ---------- tabs ----------
 export function showTab(name) {
@@ -107,8 +91,8 @@ function renderStatus() {
       b.textContent = 'Set up the AI';
       b.addEventListener('click', () => {
         b.disabled = true;
-        setupAI();
-        if (he.state === 'downloadable') setupHe(); // the same click sets up Hebrew too
+        setupAI().then(recheck);
+        if (he.state === 'downloadable') setupHe().then(recheck); // the same click sets up Hebrew too
       });
       txt().append(b);
       if (ai.error) txt().append(Object.assign(document.createElement('p'), { textContent: 'Last try: ' + ai.error }));
@@ -134,7 +118,7 @@ function renderStatus() {
       const b = document.createElement('button');
       b.className = 'btn small';
       b.textContent = 'Try again';
-      b.addEventListener('click', () => { b.disabled = true; setupAI(); });
+      b.addEventListener('click', () => { b.disabled = true; setupAI().then(recheck); });
       txt().append(b);
       break;
     }
@@ -173,7 +157,7 @@ function renderHe() {
     const b = document.createElement('button');
     b.className = 'btn small';
     b.textContent = 'Set up Hebrew';
-    b.addEventListener('click', () => { b.disabled = true; setupHe(); });
+    b.addEventListener('click', () => { b.disabled = true; setupHe().then(recheck); });
     box.append(b);
     if (he.error) box.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Last try: ' + he.error }));
   } else if (he.state === 'downloading') {
@@ -258,9 +242,9 @@ async function init() {
   showShortcuts();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) showShortcuts(); });
   onAI(renderStatus);
-  checkAI();
+  checkAI(false); // the hidden engine page keeps the AI loaded for snaps
   onHe(renderHe);
   checkHe();
 }
 
-ready = init();
+init();

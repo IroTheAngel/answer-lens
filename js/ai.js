@@ -56,7 +56,9 @@ async function availability(opts) {
   }
 }
 
-export async function checkAI() {
+// warmUp = load the AI now so the first answer is quick (the engine page
+// does; the side panel doesn't need to, it loads it when it's first used).
+export async function checkAI(warmUp = true) {
   if (!('LanguageModel' in self)) return set({ state: 'missing' });
   let mode = 'image';
   let a = await availability(IMAGE_OPTS);
@@ -66,8 +68,10 @@ export async function checkAI() {
   }
   ai.mode = mode;
   if (a === 'available') {
-    set({ state: 'loading' });
-    warm();
+    if (warmUp) {
+      set({ state: 'loading' });
+      warm();
+    } else set({ state: 'ready' });
   } else if (a === 'downloading') {
     set({ state: 'downloading' });
     warm(true);
