@@ -102,9 +102,28 @@ export async function toEn(text) {
   return (await pair('he', 'en')).translate(text);
 }
 
+// Leaves maths-only text (like "m = 20, p = 1") alone: only real words are translated.
 export async function toHe(text) {
-  if (!String(text).trim() || !/[A-Za-z]/.test(text)) return text;
+  const words = String(text).replace(/\$[^$]*\$/g, '');
+  if (!words.trim() || !/[A-Za-z]{3,}/.test(words)) return text;
   return (await pair('en', 'he')).translate(text);
+}
+
+const noMath = (s) => String(s).replace(/\$[^$\n]*\$/g, ' ');
+
+// Hebrew with maths in it ($...$): short maths (like $x$) stays inside the
+// sentence so the translator keeps the meaning; longer maths isn't translated.
+async function mixedToEn(piece) {
+  if (!isHebrew(noMath(piece))) return piece;
+  const maths = piece.match(/\$[^$\n]*\$/g) || [];
+  if (maths.every((m) => m.length <= 14 && !m.includes('\\'))) {
+    return toEn(piece.replace(/\$([^$\n]*)\$/g, '$1'));
+  }
+  const out = [];
+  for (const part of piece.split(/(\$[^$\n]*\$)/)) {
+    out.push(part.startsWith('$') || !isHebrew(part) ? part : await toEn(part));
+  }
+  return out.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 // Translates one line, but leaves maths ($...$) and `code` as they are.
@@ -151,7 +170,7 @@ export async function textToEn(text) {
   for (const line of String(text).split('\n')) {
     const parts = [];
     for (const piece of line.split(' | ')) {
-      const en = isHebrew(piece) ? await toEn(piece) : piece;
+      const en = await mixedToEn(piece);
       pieces.push({ he: piece, en });
       parts.push(en);
     }
@@ -167,15 +186,16 @@ const norm = (s) => String(s)
   .trim();
 
 // If the English answer is one of the page's choices, give back that choice
-// exactly as it was written in Hebrew.
+// exactly as the page wrote it (Hebrew words, or maths like "m = 20, p = 1").
 export function matchChoice(answerEn, pieces) {
-  const a = norm(answerEn);
+  const a = norm(String(answerEn).replace(/\$/g, ''));
   if (!a) return null;
   let best = null;
   let score = 0;
   for (const p of pieces) {
-    if (!isHebrew(p.he) || p.he.length > 90) continue;
-    const e = norm(p.en);
+    const src = p.he.replace(/\$/g, '').trim();
+    if (!src || src.length > 90) continue;
+    const e = norm(String(p.en).replace(/\$/g, ''));
     if (!e) continue;
     let sc = 0;
     if (e === a) sc = 3;
@@ -184,7 +204,7 @@ export function matchChoice(answerEn, pieces) {
     }
     if (sc > score) {
       score = sc;
-      best = p.he;
+      best = src;
     }
   }
   return score >= 1.5 ? best : null;

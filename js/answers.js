@@ -162,6 +162,13 @@ async function solve(entry, parts, tabId, fresh = false) {
   entry.note = (qHe || s.answerLang === 'he') && !heOk ? heNotReadyText() : '';
   const toHebrew = wantHe && heOk;
 
+  if (parts.some((p) => (p.textEn || p.text).includes('$'))) {
+    intro += '\nMaths from the page is written in LaTeX between $ signs.';
+  }
+  // Kept for the card's "What it read", so a missed question is easy to check.
+  entry.read = parts.map((p) => p.text.trim()).filter(Boolean).join('\n—\n').slice(0, 2500);
+  entry.readEn = qHe && heOk ? parts.map((p) => (p.textEn || '').trim()).filter(Boolean).join('\n—\n').slice(0, 2500) : '';
+
   const content = [{ type: 'text', value: intro }];
   const each = parts.length > 1 ? 2000 : 3500;
   parts.forEach((p, i) => {
@@ -247,14 +254,30 @@ export function parseReply(raw) {
     else pre += line + '\n';
   }
   return {
-    question: (sec.QUESTION || '').trim(),
+    question: plainMath((sec.QUESTION || '').trim()),
     type: (sec.TYPE || '').toLowerCase().replace(/[^a-z]/g, ''),
-    answer: (sec.ANSWER ?? (cur ? '' : pre)).trim(),
+    answer: plainMath((sec.ANSWER ?? (cur ? '' : pre)).trim()),
     steps: (sec.STEPS || '')
       .split('\n')
-      .map((l) => l.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim())
+      .map((l) => plainMath(l.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()))
       .filter(Boolean),
   };
+}
+
+// LaTeX like "$m = 20, \quad p = \frac{1}{2}$" shown as plain "m = 20, p = 1/2".
+export function plainMath(s) {
+  return String(s)
+    .replace(/\$\$?([^$]*)\$\$?/g, '$1')
+    .replace(/\\(?:quad|qquad|[,;:! ])/g, ' ')
+    .replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, '$1/$2')
+    .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
+    .replace(/\\(?:left|right|displaystyle)/g, '')
+    .replace(/\\times\b/g, '×').replace(/\\cdot\b/g, '·').replace(/\\div\b/g, '÷')
+    .replace(/\\(?:le|leq)\b/g, '≤').replace(/\\(?:ge|geq)\b/g, '≥').replace(/\\(?:ne|neq)\b/g, '≠')
+    .replace(/\\pm\b/g, '±').replace(/\\pi\b/g, 'π').replace(/\\infty\b/g, '∞')
+    .replace(/\\text\{([^{}]*)\}/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 // Cuts the snapped box out of the screenshot. Small boxes are enlarged so
@@ -335,6 +358,14 @@ export async function explain(id, tabId = null) {
 
 // ---------- the feed ----------
 
+function set2(root, sel, text) {
+  const n = root.querySelector(sel);
+  if (n) {
+    n.textContent = text;
+    n.dir = 'auto';
+  }
+}
+
 function renderFeed() {
   const box = feed();
   const q = $('#hist-search').value.trim().toLowerCase();
@@ -411,7 +442,14 @@ function fillCard(e, el) {
       <button class="mini" data-act="delete" title="Delete">${icon('trash', 15)}</button>
     </div>`;
   const note = e.note && !busy ? `<div class="note-line">${icon('info', 14)}<span></span></div>` : '';
-  el.innerHTML = `${shots}<div class="inner">${body}${note}${explanation}${actions}</div>`;
+  // What Answer Lens read from the page (handy when it misses a question).
+  const read = busy || e.status === 'error' ? '' : `
+    <details class="read"><summary>${icon('search', 13)} What it read</summary>
+      <pre class="read-text"></pre>${e.readEn ? '<div class="read-sub">In English for the AI:</div><pre class="read-en"></pre>' : ''}
+    </details>`;
+  el.innerHTML = `${shots}<div class="inner">${body}${note}${explanation}${read}${actions}</div>`;
+  set2(el, '.read-text', e.read || 'No text on the page here, so it only had the picture.');
+  set2(el, '.read-en', e.readEn || '');
   const set = (sel, text) => { const n = el.querySelector(sel); if (n) n.textContent = text; };
   set('.error span', e.error);
   set('.q', e.question);

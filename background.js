@@ -19,6 +19,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e?.message || e) }));
     return true;
   }
+  // Text from the tab's embedded frames (each frame runs frametext.js).
+  if (msg?.type === 'al-frame-text') {
+    chrome.scripting
+      .executeScript({
+        target: { tabId: sender.tab.id, allFrames: true },
+        func: () => (globalThis.__alCollect ? globalThis.__alCollect() : null),
+      })
+      .then(
+        (res) => sendResponse(res.filter((x) => x.frameId !== 0 && x.result).map((x) => x.result)),
+        () => sendResponse([]),
+      );
+    return true;
+  }
   // A screenshot of what's visible in the tab.
   if (msg?.type === 'al-capture') {
     chrome.tabs
@@ -68,7 +81,7 @@ async function startInTab(tabId, mode) {
     await chrome.tabs.sendMessage(tabId, msg);
   } catch {
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['frametext.js', 'content.js'] });
       await chrome.tabs.sendMessage(tabId, msg);
     } catch {
       // chrome:// pages and the Web Store can't be snapped.

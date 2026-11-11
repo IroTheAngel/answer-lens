@@ -196,7 +196,7 @@ async function startSnap(mode) {
     await chrome.tabs.sendMessage(tab.id, msg);
   } catch {
     try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['frametext.js', 'content.js'] });
       await chrome.tabs.sendMessage(tab.id, msg);
     } catch {
       toast('This page can\'t be snapped. Chrome blocks extensions on its own pages and the Web Store.');

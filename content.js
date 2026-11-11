@@ -1,6 +1,9 @@
 // Answer Lens page script: the snap button, area picker, multi-snap queue
 // and the answer popup. The AI itself runs in the side panel.
 (() => {
+  // The button and popups live in the top page only; frames just share
+  // their text (frametext.js).
+  if (window.top !== window) return;
   if (window.__answerLensV2) return;
   window.__answerLensV2 = true;
 
@@ -344,7 +347,7 @@
       const r = await msg({ type: 'al-capture' });
       if (!r?.dataUrl) throw new Error(r?.error || 'Couldn\'t take a screenshot of this page.');
       const area = rect || { x: 0, y: 0, w: innerWidth, h: innerHeight };
-      return { dataUrl: r.dataUrl, rect, vw: innerWidth, vh: innerHeight, text: textInRect(area, !rect) };
+      return { dataUrl: r.dataUrl, rect, vw: innerWidth, vh: innerHeight, text: await textInRect(area, !rect) };
     } finally {
       host.style.visibility = '';
     }
@@ -481,42 +484,23 @@
   // ---------- reading the page text in a box ----------
   // Real page text is more reliable for the AI than reading a picture.
   // loose = whole screen: count text that is even partly visible.
-  function textInRect(r, loose = false) {
-    const body = document.body || document.documentElement;
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
-    });
-    const range = document.createRange();
+  async function textInRect(r, loose = false) {
+    // Text from this page (frametext.js) plus any embedded frames.
+    const all = (globalThis.__alCollect?.() || { bits: [] }).bits.slice();
+    try {
+      const frames = await msg({ type: 'al-frame-text' });
+      if (Array.isArray(frames)) all.push(...placeFrames(frames, loose));
+    } catch {}
     const bits = [];
-    let n;
-    let seen = 0;
-    while ((n = walker.nextNode()) && seen < 20000) {
-      seen++;
-      const p = n.parentElement;
-      if (!p || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(p.tagName)) continue;
-      range.selectNodeContents(n);
-      for (const b of range.getClientRects()) {
-        if (!b.width || !b.height) continue;
-        const cx = b.left + b.width / 2;
-        const cy = b.top + b.height / 2;
-        const inside = loose
-          ? b.right > r.x && b.left < r.x + r.w && b.bottom > r.y && b.top < r.y + r.h
+    for (const b of all) {
+      const hit = b.rects.find((q) => {
+        const cx = (q.left + q.right) / 2;
+        const cy = (q.top + q.bottom) / 2;
+        return loose
+          ? q.right > r.x && q.left < r.x + r.w && q.bottom > r.y && q.top < r.y + r.h
           : cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h;
-        if (inside) {
-          const cs = getComputedStyle(p);
-          if (cs.visibility === 'hidden' || cs.opacity === '0') break;
-          bits.push({ t: n.nodeValue.replace(/\s+/g, ' ').trim(), top: b.top, left: b.left, right: b.right, h: b.height });
-          break;
-        }
-      }
-    }
-    for (const f of document.querySelectorAll('input[type=text], input:not([type]), textarea')) {
-      const b = f.getBoundingClientRect();
-      const cx = b.left + b.width / 2;
-      const cy = b.top + b.height / 2;
-      if (f.value && cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
-        bits.push({ t: f.value.trim(), top: b.top, left: b.left, right: b.right, h: b.height });
-      }
+      });
+      if (hit) bits.push({ t: b.t, top: hit.top, left: hit.left, right: hit.right, h: hit.bottom - hit.top });
     }
     // Group the pieces into rows, top to bottom.
     bits.sort((a, b) => a.top - b.top);
@@ -530,7 +514,9 @@
     // means separate answer choices, so they're split with " | ".
     const HEB = /[א-ת]/;
     const lines = rows.map((row) => {
-      const rtl = row.filter((b) => HEB.test(b.t)).length > row.length / 2;
+      // Right to left when the row's words (not its maths) are mostly Hebrew.
+      const words = row.map((b) => b.t).join(' ').replace(/\$[^$]*\$/g, '');
+      const rtl = (words.match(/[א-ת]/g) || []).length > (words.match(/[A-Za-z]/g) || []).length;
       row.sort((a, b) => (rtl ? b.right - a.right : a.left - b.left));
       let s = '';
       row.forEach((b, i) => {
@@ -544,6 +530,39 @@
       return s;
     });
     return lines.join('\n').slice(0, 4000);
+  }
+
+  // Puts each embedded frame's text where that frame sits on the page.
+  // Frames are matched to <iframe>s by address, or else by size.
+  function placeFrames(frames, loose) {
+    const els = [...document.querySelectorAll('iframe, frame')]
+      .map((f) => ({ f, b: f.getBoundingClientRect(), used: false }))
+      .filter((x) => x.b.width > 0 && x.b.height > 0);
+    const sameUrl = (f, href) => {
+      try {
+        return !!f.src && new URL(f.src, location.href).href === href;
+      } catch {
+        return false;
+      }
+    };
+    const out = [];
+    for (const fr of frames) {
+      if (!fr?.bits?.length) continue;
+      const m = els.find((x) => !x.used && sameUrl(x.f, fr.href))
+        || els.find((x) => !x.used && Math.abs(x.f.clientWidth - fr.w) <= 3 && Math.abs(x.f.clientHeight - fr.h) <= 3);
+      if (m) {
+        m.used = true;
+        const dx = m.b.left + m.f.clientLeft;
+        const dy = m.b.top + m.f.clientTop;
+        for (const b of fr.bits) {
+          out.push({ t: b.t, rects: b.rects.map((q) => ({ left: q.left + dx, right: q.right + dx, top: q.top + dy, bottom: q.bottom + dy })) });
+        }
+      } else if (loose) {
+        // A frame inside another frame: keep its text for whole-screen snaps.
+        out.push(...fr.bits);
+      }
+    }
+    return out;
   }
 
   // ---------- answer popup ----------
