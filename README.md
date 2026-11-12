@@ -5,7 +5,7 @@ No account, no daily limit: it uses Chrome's built-in AI (Gemini Nano), which ru
 
 ## Install
 
-1. Download this project (**Code → Download ZIP**) and unzip it somewhere you'll keep it, like Documents. Chrome runs the extension from that folder, so don't delete it.
+1. Download **[AnswerLens.zip](https://github.com/IroTheAngel/answer-lens/releases/latest/download/AnswerLens.zip)** (always the newest version, from [Releases](https://github.com/IroTheAngel/answer-lens/releases)) and unzip it somewhere you'll keep it, like Documents. Chrome runs the extension from that folder, so don't delete it.
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and pick the unzipped folder (the one with `manifest.json` in it).
 4. Pin Answer Lens from the puzzle-piece menu and click it. The side panel opens. The first time, press **Set up the AI**: Chrome downloads its free AI model once (a few GB).
